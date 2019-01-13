@@ -1,8 +1,9 @@
 # General
-*/__pycache__/*
+__pycache__
+**/*.pyc
 
 # Environment related files
-env/*
+env
 
 # Database related files
 db.*
