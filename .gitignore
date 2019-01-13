@@ -1,1 +1,8 @@
+# General
+*/__pycache__/*
+
+# Environment related files
 env/*
+
+# Database related files
+db.*
