@@ -3,5 +3,5 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    path('', views.home, name='replay-home'),
+    path('', views.index, name='replay-index'),
 ]
