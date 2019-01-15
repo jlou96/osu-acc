@@ -29,16 +29,16 @@ class Replay(models.Model):
     num_true_miss = models.PositiveSmallIntegerField()
 
     # ArrayField is PostGreSQL only!
-    hit_error_array = ArrayField(models.DecimalField(max_digits=5, decimal_places=2))
+    hit_errors = ArrayField(models.DecimalField(max_digits=5, decimal_places=2))
 
-    min_early_hit_error = models.DecimalField(max_digits=5, decimal_places=2)
-    max_early_hit_error = models.DecimalField(max_digits=5, decimal_places=2)
-    mean_early_hit_error = models.DecimalField(max_digits=5, decimal_places=2)
+    min_neg_hit_error = models.DecimalField(max_digits=5, decimal_places=2)
+    max_neg_hit_error = models.DecimalField(max_digits=5, decimal_places=2)
+    avg_neg_hit_error = models.DecimalField(max_digits=5, decimal_places=2)
 
-    min_late_hit_error = models.DecimalField(max_digits=5, decimal_places=2)
-    max_late_hit_error = models.DecimalField(max_digits=5, decimal_places=2)
-    mean_late_hit_error = models.DecimalField(max_digits=5, decimal_places=2)
+    min_pos_hit_error = models.DecimalField(max_digits=5, decimal_places=2)
+    max_pos_hit_error = models.DecimalField(max_digits=5, decimal_places=2)
+    avg_pos_hit_error = models.DecimalField(max_digits=5, decimal_places=2)
 
     min_abs_hit_error = models.DecimalField(max_digits=5, decimal_places=2)
     max_abs_hit_error = models.DecimalField(max_digits=5, decimal_places=2)
-    mean_abs_hit_error = models.DecimalField(max_digits=5, decimal_places=2)
+    avg_abs_hit_error = models.DecimalField(max_digits=5, decimal_places=2)

@@ -45,9 +45,15 @@ def calc_accuracy(a, b, c, d):
     return round(raw, 2)
 
 
-def get_hit_errors():
+def get_hit_errors(replay_events):
     """
     Given an input replay, return a list of hit errors.
+
+    Args:
+        hit_errors (List(ReplayEvent)): A list of all ReplayEvents.
+
+    Returns:
+        An array containing all hit errors in chronological order.
     """
 
     hit_errors = []
@@ -57,12 +63,12 @@ def get_hit_errors():
     return hit_errors
 
 
-def calc_hit_error_data():
+def calc_hit_error_data(hit_errors):
     """
     Calculates various metrics regarding hit errors.
 
     Args:
-        replay_events (List(osrp.ReplayEvent)): A list of all ReplayEvent instances.
+        hit_errors (List(float)): A list of all hit errors.
 
     Returns:
         A dictionary containing all relevant hit error metrics.
@@ -70,7 +76,29 @@ def calc_hit_error_data():
 
     data = {}
 
-    # TODO
+    pos_errors, neg_errors, abs_errors = [], [], []
+
+    for error in hit_errors:
+        if error > 0:
+            pos_errors.append(error)
+        elif error < 0:
+            neg_errors.append(error)
+        abs_errors.append(abs(error))
+    
+    data['min_pos'] = min(pos_errors)
+    data['max_pos'] = max(pos_errors)
+    data['avg_pos'] = sum(pos_errors) / len(pos_errors)
+
+    data['min_neg'] = min(neg_errors)
+    data['max_neg'] = max(neg_errors)
+    data['avg_neg'] = sum(neg_errors) / len(neg_errors)
+
+    data['min_abs'] = min(abs_errors)
+    data['max_abs'] = max(abs_errors)
+    data['avg_abs'] = sum(abs_errors) / len(abs_errors)
+
+    data['num_pos'] = len(pos_errors)
+    data['num_neg'] = len(neg_errors)
 
     return data
 
@@ -121,6 +149,21 @@ def handle_replay(replay):
     num_true_miss = parsed_replay.misses
     true_accuracy = calc_accuracy(num_true_300, num_true_100, num_true_50, num_true_miss)
 
+    hit_errors = get_hit_errors(replay_events)
+
+    hit_error_data = calc_hit_error_data(hit_errors)
+
+    min_neg_hit_error = hit_error_data['min_neg']
+    max_neg_hit_error = hit_error_data['max_neg']
+    avg_neg_hit_error = hit_error_data['avg_neg']
+
+    min_pos_hit_error = hit_error_data['min_pos']
+    max_pos_hit_error = hit_error_data['max_pos']
+    avg_pos_hit_error = hit_error_data['avg_pos']
+
+    min_abs_hit_error = hit_error_data['min_abs']
+    max_abs_hit_error = hit_error_data['max_abs']
+    avg_abs_hit_error = hit_error_data['avg_abs']
 
     # Create an instance of a Replay model
 
