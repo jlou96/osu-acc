@@ -5,7 +5,10 @@
     <script src='static/javascript/scripts.js'></script>
 </head>
 <body>
-    <h1>Upload a replay file</h1>
-    <input id='replay' type='file' accept='.osr' value='Upload'/>
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <input type="file" name="replayFile" id="replayFileInput">
+        <button type="submit">Upload</button>
+    </form>
 </body>
 </html>
