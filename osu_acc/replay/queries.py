@@ -3,6 +3,7 @@ import json
 import requests
 import osrparse as osrp
 
+from models import Replay
 from settings_secret import OSU_API_KEY
 
 OSU_API_ENDPOINT = 'https://osu.ppy.sh/api/get_beatmaps'
@@ -127,43 +128,50 @@ def handle_replay(replay):
     # Returns a JSON list with one element containing our beatmap info
     data = response.json()[0]
 
-    song_title = data['title']
-    song_artist = data['artist']
-    beatmap_creator = data['creator']
-    beatmap_difficulty = data['version']
-    beatmap_od = data['diff_overall']
-    play_date = parsed_replay.timestamp
+    # Create and populate dictionary containing all fields in the Replay model
+    replay_fields = {}
 
-    ap = 0.00
-    pp = 0.00
+    replay_fields['song_title'] = data['title']
+    replay_fields['song_artist'] = data['artist']
+    replay_fields['beatmap_creator'] = data['creator']
+    replay_fields['beatmap_difficulty'] = data['version']
+    replay_fields['beatmap_od'] = data['diff_overall']
+    replay_fields['play_date'] = parsed_replay.timestamp
 
-    num_raw_300 = parsed_replay.number_300s
-    num_raw_100 = parsed_replay.number_100s
-    num_raw_50  = parsed_replay.number_50s
-    num_raw_miss = parsed_replay.misses
-    raw_accuracy = calc_accuracy(num_raw_300, num_raw_100, num_raw_50, num_raw_miss)
+    replay_fields['ap'] = 0.00
+    replay_fields['pp'] = 0.00
+
+    replay_fields['num_raw_300'] = parsed_replay.number_300s
+    replay_fields['num_raw_100'] = parsed_replay.number_100s
+    replay_fields['num_raw_50']  = parsed_replay.number_50s
+    replay_fields['num_raw_miss'] = parsed_replay.misses
+    replay_fields['raw_accuracy'] = calc_accuracy(replay_fields['num_raw_300'], replay_fields['num_raw_100'],
+                                                  replay_fields['num_raw_50'], replay_fields['num_raw_miss'])
     
-    num_true_300 = parsed_replay.number_300s
-    num_true_100 = parsed_replay.number_100s
-    num_true_50  = parsed_replay.number_50s
-    num_true_miss = parsed_replay.misses
-    true_accuracy = calc_accuracy(num_true_300, num_true_100, num_true_50, num_true_miss)
+    replay_fields['num_true_300'] = parsed_replay.number_300s
+    replay_fields['num_true_100'] = parsed_replay.number_100s
+    replay_fields['num_true_50']  = parsed_replay.number_50s
+    replay_fields['num_true_miss'] = parsed_replay.misses
+    replay_fields['true_accuracy'] = calc_accuracy(replay_fields['num_true_300'], replay_fields['num_true_100'],
+                                                   replay_fields['num_true_50'], replay_fields['num_true_miss'])
 
-    hit_errors = get_hit_errors(replay_events)
+    replay_fields['hit_errors'] = get_hit_errors(replay_events)
 
-    hit_error_data = calc_hit_error_data(hit_errors)
+    hit_error_data = calc_hit_error_data(replay_fields['hit_errors'])
 
-    min_neg_hit_error = hit_error_data['min_neg']
-    max_neg_hit_error = hit_error_data['max_neg']
-    avg_neg_hit_error = hit_error_data['avg_neg']
+    replay_fields['min_neg_hit_error'] = hit_error_data['min_neg']
+    replay_fields['max_neg_hit_error'] = hit_error_data['max_neg']
+    replay_fields['avg_neg_hit_error'] = hit_error_data['avg_neg']
 
-    min_pos_hit_error = hit_error_data['min_pos']
-    max_pos_hit_error = hit_error_data['max_pos']
-    avg_pos_hit_error = hit_error_data['avg_pos']
+    replay_fields['min_pos_hit_error'] = hit_error_data['min_pos']
+    replay_fields['max_pos_hit_error'] = hit_error_data['max_pos']
+    replay_fields['avg_pos_hit_error'] = hit_error_data['avg_pos']
 
-    min_abs_hit_error = hit_error_data['min_abs']
-    max_abs_hit_error = hit_error_data['max_abs']
-    avg_abs_hit_error = hit_error_data['avg_abs']
+    replay_fields['min_abs_hit_error'] = hit_error_data['min_abs']
+    replay_fields['max_abs_hit_error'] = hit_error_data['max_abs']
+    replay_fields['avg_abs_hit_error'] = hit_error_data['avg_abs']
 
     # Create an instance of a Replay model
-
+    replay_model = Replay(**replay_fields)
+    replay_model.save()
+    
