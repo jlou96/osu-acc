@@ -1,4 +1,7 @@
 # General
+settings_secret.py
+
+# Pycache
 __pycache__
 **/*.pyc
 
