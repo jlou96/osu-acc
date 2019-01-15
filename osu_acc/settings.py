@@ -33,10 +33,10 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
-    'beatmap.apps.BeatmapConfig',
-    'player.apps.PlayerConfig',
-    'rankings.apps.RankingsConfig',
-    'replay.apps.ReplayConfig',
+    'osu_acc.beatmap.apps.BeatmapConfig',
+    'osu_acc.player.apps.PlayerConfig',
+    'osu_acc.rankings.apps.RankingsConfig',
+    'osu_acc.replay.apps.ReplayConfig',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',

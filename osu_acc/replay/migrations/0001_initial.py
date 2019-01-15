@@ -15,7 +15,6 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name='Replay',
             fields=[
-                ('replay_hash', models.CharField(max_length=64, primary_key=True, serialize=False)),
                 ('song_title', models.CharField(max_length=32)),
                 ('song_artist', models.CharField(max_length=32)),
                 ('beatmap_creator', models.CharField(max_length=16)),

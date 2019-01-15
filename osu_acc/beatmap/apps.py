@@ -2,4 +2,4 @@ from django.apps import AppConfig
 
 
 class BeatmapConfig(AppConfig):
-    name = 'beatmap'
+    name = 'osu_acc.beatmap'

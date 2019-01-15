@@ -2,4 +2,4 @@ from django.apps import AppConfig
 
 
 class ReplayConfig(AppConfig):
-    name = 'replay'
+    name = 'osu_acc.replay'
