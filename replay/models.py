@@ -3,8 +3,6 @@ from django.contrib.postgres.fields import ArrayField
 
 
 class Replay(models.Model):
-    replay_hash = models.CharField(max_length=64, primary_key=True)
-    
     # METADATA
     song_title = models.CharField(max_length=32)
     song_artist = models.CharField(max_length=32)
@@ -25,7 +23,7 @@ class Replay(models.Model):
     ap = models.DecimalField(max_digits=6, decimal_places=2)
     true_accuracy = models.DecimalField(max_digits=4, decimal_places=2)
 
-    # PostGreSQL only!
+    # ArrayField is PostGreSQL only!
     hit_error_array = ArrayField(models.DecimalField(max_digits=5, decimal_places=2))
 
     min_early_hit_error = models.DecimalField(max_digits=5, decimal_places=2)

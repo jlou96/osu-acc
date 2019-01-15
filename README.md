@@ -10,6 +10,10 @@ To install the dependencies used in this project,
 pip install -r requirements.txt
 ```
 
+## Secret settings
+
+Sensitive fields are to be isolated in a separate file, `settings_secret.py`. Create your own by copying from `secret_settings.py.template` and filling in your own values. A secret key generator for Django can be found [here](https://www.miniwebtool.com/django-secret-key-generator/).
+
 ## Hosting locally
 
 To host this project locally, run
