@@ -46,12 +46,139 @@ def calc_accuracy(a, b, c, d):
     return round(raw, 2)
 
 
-def get_hit_errors(replay_events):
+def create_beatmap_entry(data):
     """
-    Given an input replay, return a list of hit errors.
+    Given a beatmap's API response as JSON, populate the database with the appropriate information.
+    """
+    bm_id = data['beatmap_id']
+
+    if Beatmap.objects.filter(beatmap_id=):
+        return
+
+    # Download beatmap file
+    OSU_BEATMAP_ENDPOINT = 'https://osu.ppy.sh/osu/'
+    response = requests.get(OSU_BEATMAP_ENDPOINT + bm_id)
+
+    with open(bm_id + '.osu', 'wb') as f:
+        f.write(response.content)
+        data = f.readlines()
+
+    # Parse beatmap file for required data
+    beatmap_fields = {}
+
+    beatmap_fields['beatmap_id'] = bm_id
+
+    beatmap_fields['song_title'] = data['title']
+    beatmap_fields['song_artist'] = data['artist']
+    beatmap_fields['beatmap_creator'] = data['creator']
+    beatmap_fields['beatmap_difficulty'] = data['version']
+    beatmap_fields['beatmap_od'] = data['diff_overall']
+
+    beatmap_fields['timing_point_offsets'] = []
+    beatmap_fields['timing_point_ms_per_beats'] = []
+    beatmap_fields['hit_object_times'] = []
+
+    # Timing Points
+    # Syntax: Offset, Milliseconds per Beat, Meter, 
+    #         Sample Set, Sample Index, Volume, Inherited, Kiai Mode
+    # For our purposes, we only need the first three fields.
+    # We will also convert all ms/beat values to positive.
+
+    for line in data:
+        if line.strip() == '[TimingPoints]':
+            is_timing_point = True
+            continue
+        
+        if is_timing_point:
+            # There is always an empty line before the start of the next section
+            # Use it to identify when the current section ends
+            if not line.strip():
+                is_timing_point = False
+            else:
+                beatmap_fields['timing_point_offsets'].append(int(line.split(',')[0]))
+                beatmap_fields['timing_point_ms_per_beats'].append(Decimal(line.split(',')[1]))
+
+    # HitObjects
+    # Syntax: x,y,time,type,hitSound...,extras
+    # For our purposes, we only need the time field
+
+    for line in data:
+        if line.strip() == '[HitObjects]':
+            is_hit_object = True
+            continue
+
+        if is_hit_object:
+            if not line.strip():
+                is_hit_object = False
+            else:
+                hit_object_time = line.split(',')[2]
+                beatmap_fields['hit_object_times'].append(int(hit_object_time))
+    
+    # Create Beatmap model instance and save to DB
+    beatmap_model = Beatmap(**beatmap_fields)
+    beatmap_model.save()
+
+
+def get_beatmap_object_times(bm_id):
+    """
+    Returns a list of floats representing the timing points of the beatmap.
+    """
+    
+    beatmap_object_times = []
+    is_hitobject = False
+
+    create_beatmap_entry(bm_id)
+    beatmap_entry = 
+
+    # HitObject lines follow the format
+    # x,y,time,type,hitSound...,extras
+    hit_object_pattern = r'[0-9]+,[0-9]+,[0-9]+,[0-9]+,[0-9]+,?.*'
+
+    for line in data:
+        if line.strip() == '[HitObjects]':
+            is_hitobject = True
+            continue
+
+        if is_hitobject and re.match(hit_object_pattern, line):
+            hit_object_time = line.split(',')[2]
+            beatmap_object_times.append(int(hit_object_time))
+
+    # Debugging
+    print('Beatmap Object Times')
+    print('Length: {}'.format(len(beatmap_object_times)))
+    print(beatmap_object_times)
+    print()
+
+    return beatmap_object_times
+
+
+def get_hit_window(od):
+    """
+    Returns the maximum amount of time, in milliseconds, that an input candeivate
+    from a beatmap's hit object time in order to count as a hit.
+
+    The formula used was retrieved from the following link on 01/15/2019.
+    https://osu.ppy.sh/help/wiki/osu!_File_Formats/Osu_(file_format)#overall-difficulty
 
     Args:
-        hit_errors (List(ReplayEvent)): A list of all ReplayEvents.
+        od (float): The beatmap's overall difficulty.
+    
+    Returns:
+        A float.
+    """
+
+    return 150 + 50 * (5 - od) / 5
+
+
+def get_hit_errors(hit_window, replay_events, hit_object_times):
+    """
+    Given an input replay play data and its beatmap's hit objects' times,
+    return a list of hit errors.
+
+    Args:
+        hit_window (float): The hit window. See get_hit_window() for more info.
+        replay_events (List(ReplayEvent)): A list of all osrparse.ReplayEvents.
+        hit_object_times (List(int)): A list of all hit object times in a beatmap.
 
     Returns:
         An array containing all hit errors in chronological order.
@@ -59,7 +186,29 @@ def get_hit_errors(replay_events):
 
     hit_errors = []
 
-    # TODO
+    i, j, prev_obj_time = 0, 0, 0
+
+    while i < len(replay_events) and j < len(hit_object_times):
+        # Map each beatmap object with the earliest replay input
+        # that falls within the object's hit window.
+
+        # Replays store input times relative to the previous input.
+        curr_inp_time = replay_events[i].time_since_previous_action
+
+        # Hit Object times are represented absolutely,
+        # so we must convert this value to be relative.
+        curr_obj_time = hit_object_times[j] - prev_obj_time
+        prev_obj_time = hit_object_times[j]
+
+        # Store the earliest input within the current object's hit window.
+        curr_hit_error = curr_obj_time - curr_inp_time
+
+        if abs(curr_hit_error) < hit_window:
+            hit_errors.append(curr_hit_error)
+
+            j += 1
+
+        i += 1
 
     return hit_errors
 
@@ -128,14 +277,21 @@ def handle_replay(replay):
     # Returns a JSON list with one element containing our beatmap info
     data = response.json()[0]
 
+    # If the song is longer than 999,999.99ms (16m 40s), reject
+    if data['total_length'] >= 1000:
+        # TODO: Write a proper exception for this.
+        print('Do not replays of maps longer than 16:40.')
+        return
+
+    # If there a Beatmap model of this Replay's beatmap does not exist, create it
+    bm_id = data['beatmap_id']
+
+    if not Beatmap.objects.filter(beatmap_id=bm_id):
+        create_beatmap_entry(data) 
+
     # Create and populate dictionary containing all fields in the Replay model
     replay_fields = {}
 
-    replay_fields['song_title'] = data['title']
-    replay_fields['song_artist'] = data['artist']
-    replay_fields['beatmap_creator'] = data['creator']
-    replay_fields['beatmap_difficulty'] = data['version']
-    replay_fields['beatmap_od'] = data['diff_overall']
     replay_fields['play_date'] = parsed_replay.timestamp
 
     replay_fields['ap'] = 0.00
@@ -174,4 +330,3 @@ def handle_replay(replay):
     # Create an instance of a Replay model
     replay_model = Replay(**replay_fields)
     replay_model.save()
-    

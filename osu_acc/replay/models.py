@@ -3,14 +3,11 @@ from django.contrib.postgres.fields import ArrayField
 
 
 class Replay(models.Model):
-    # METADATA
-    song_title = models.CharField(max_length=32)
-    song_artist = models.CharField(max_length=32)
-    # beatmap = models.ForeignKey(Beatmap)
-    beatmap_creator = models.CharField(max_length=16)
-    beatmap_difficulty = models.CharField(max_length=32)
-    beatmap_od = models.DecimalField(max_digits=3, decimal_places=1)
-    play_date = models.DateTimeField()
+    # PRIMARY KEY
+    replay_id = models.CharField(max_length=64, primary_key=True)
+
+    # FOREIGN KEYS
+    beatmap = models.ForeignKey(Beatmap, on_delete=models.CASCADE, verbose_name='The related beatmap')
 
     # STANDARD DATA
     pp = models.DecimalField(max_digits=6, decimal_places=2)
@@ -29,6 +26,7 @@ class Replay(models.Model):
     num_true_miss = models.PositiveSmallIntegerField()
 
     # ArrayField is PostGreSQL only!
+    hit_inputs = ArrayField(models.IntegerField())
     hit_errors = ArrayField(models.DecimalField(max_digits=5, decimal_places=2))
 
     min_neg_hit_error = models.DecimalField(max_digits=5, decimal_places=2)
