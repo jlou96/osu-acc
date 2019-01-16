@@ -1,6 +1,8 @@
 from django.db import models
 from django.contrib.postgres.fields import ArrayField
 
+from ..beatmap.models import Beatmap
+
 
 class Replay(models.Model):
     # PRIMARY KEY

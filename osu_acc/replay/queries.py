@@ -1,9 +1,9 @@
 from decimal import Decimal
-import json
 import requests
 import osrparse as osrp
 
-from models import Replay
+from ..replay.models import Replay
+from ..beatmap.models import Beatmap
 from settings_secret import OSU_API_KEY
 
 OSU_API_ENDPOINT = 'https://osu.ppy.sh/api/get_beatmaps'
@@ -119,40 +119,24 @@ def create_beatmap_entry(data):
     beatmap_model.save()
 
 
-def get_beatmap_object_times(bm_id):
+def get_beatmap_hit_times(bm_id):
     """
-    Returns a list of floats representing the timing points of the beatmap.
-    """
+    Returns a list of integers representing the object hit times of the beatmap.
+
+    Equivalent to: SELECT object_hit_times FROM Beatmaps WHERE beatmap_id=bm_id
+
+    Args:
+        bm_id (str): The ID of the beatmap, given by the osu!api.
     
-    beatmap_object_times = []
-    is_hitobject = False
+    Returns:
+        beatmap_hit_times (List(int)): The object hit times of the beatmap.
+    """
 
-    create_beatmap_entry(bm_id)
-    beatmap_entry = 
-
-    # HitObject lines follow the format
-    # x,y,time,type,hitSound...,extras
-    hit_object_pattern = r'[0-9]+,[0-9]+,[0-9]+,[0-9]+,[0-9]+,?.*'
-
-    for line in data:
-        if line.strip() == '[HitObjects]':
-            is_hitobject = True
-            continue
-
-        if is_hitobject and re.match(hit_object_pattern, line):
-            hit_object_time = line.split(',')[2]
-            beatmap_object_times.append(int(hit_object_time))
-
-    # Debugging
-    print('Beatmap Object Times')
-    print('Length: {}'.format(len(beatmap_object_times)))
-    print(beatmap_object_times)
-    print()
-
-    return beatmap_object_times
+    beatmap_hit_times = Beatmap.objects.values_list('object_hit_times', flat=True).get(beatmap_id=bm_id)
+    return beatmap_hit_times
 
 
-def get_hit_window(od):
+def get_hit_window(overall_diff):
     """
     Returns the maximum amount of time, in milliseconds, that an input candeivate
     from a beatmap's hit object time in order to count as a hit.
@@ -167,7 +151,7 @@ def get_hit_window(od):
         A float.
     """
 
-    return 150 + 50 * (5 - od) / 5
+    return 150 + 50 * (5 - overall_diff) / 5
 
 
 def get_hit_errors(hit_window, replay_events, hit_object_times):
@@ -311,7 +295,9 @@ def handle_replay(replay):
     replay_fields['true_accuracy'] = calc_accuracy(replay_fields['num_true_300'], replay_fields['num_true_100'],
                                                    replay_fields['num_true_50'], replay_fields['num_true_miss'])
 
-    replay_fields['hit_errors'] = get_hit_errors(replay_events)
+    hit_window = get_hit_window(data['diff_overall'])
+    hit_object_times = get_beatmap_hit_times(bm_id)
+    replay_fields['hit_errors'] = get_hit_errors(hit_window, replay_events, hit_object_times)
 
     hit_error_data = calc_hit_error_data(replay_fields['hit_errors'])
 
