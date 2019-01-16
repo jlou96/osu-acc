@@ -12,7 +12,7 @@ https://docs.djangoproject.com/en/2.1/ref/settings/
 
 import os
 
-import settings_secret
+import secrets
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -22,7 +22,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # See https://docs.djangoproject.com/en/2.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = settings_secret.SECRET_KEY
+SECRET_KEY = secrets.SECRET_KEY
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -85,8 +85,8 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'osu_acc',
-        'USER': settings_secret.DATABASE_USERNAME,
-        'PASSWORD': settings_secret.DATABASE_PASSWORD,
+        'USER': secrets.DATABASE_USERNAME,
+        'PASSWORD': secrets.DATABASE_PASSWORD,
         'HOST': 'localhost',
         'PORT': '5432',
     }
@@ -117,7 +117,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = settings_secret.TIME_ZONE
+TIME_ZONE = secrets.TIME_ZONE
 
 USE_I18N = True
 
@@ -133,3 +133,8 @@ STATIC_URL = '/static/'
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'static'),
 ]
+
+# File Upload
+# Force to write replay files to disk
+# This allows osrparse to parse them
+FILE_UPLOAD_MAX_MEMORY_SIZE = 0

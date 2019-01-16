@@ -1,5 +1,5 @@
 # General
-settings_secret.py
+secrets.py
 
 # Pycache
 __pycache__

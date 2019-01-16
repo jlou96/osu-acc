@@ -11,6 +11,8 @@ class Replay(models.Model):
     # FOREIGN KEYS
     beatmap = models.ForeignKey(Beatmap, on_delete=models.CASCADE, verbose_name='The related beatmap')
 
+    play_date = models.DateTimeField()
+
     # STANDARD DATA
     pp = models.DecimalField(max_digits=6, decimal_places=2)
     raw_accuracy = models.DecimalField(max_digits=4, decimal_places=2)

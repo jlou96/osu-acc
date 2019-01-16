@@ -4,7 +4,7 @@ import osrparse as osrp
 
 from ..replay.models import Replay
 from ..beatmap.models import Beatmap
-from settings_secret import OSU_API_KEY
+from secrets import OSU_API_KEY
 
 OSU_API_ENDPOINT = 'https://osu.ppy.sh/api/get_beatmaps'
 
@@ -248,9 +248,8 @@ def handle_replay(replay):
     Returns:
         Nothing.
     """
-
     # Parse the local replay file and extract data
-    parsed_replay = osrp.parse_replay_file(replay)
+    parsed_replay = osrp.parse_replay_file(replay.temporary_file_path())
     beatmap_hash  = parsed_replay.beatmap_hash
     replay_events = parsed_replay.play_data
 
@@ -262,7 +261,7 @@ def handle_replay(replay):
     data = response.json()[0]
 
     # If the song is longer than 999,999.99ms (16m 40s), reject
-    if data['total_length'] >= 1000:
+    if int(data['total_length']) >= 1000:
         # TODO: Write a proper exception for this.
         print('Do not replays of maps longer than 16:40.')
         return
@@ -276,6 +275,8 @@ def handle_replay(replay):
     # Create and populate dictionary containing all fields in the Replay model
     replay_fields = {}
 
+    replay_fields['replay_id'] = parsed_replay.replay_hash
+    replay_fields['beatmap'] = Beatmap.objects.filter(beatmap_id=bm_id)
     replay_fields['play_date'] = parsed_replay.timestamp
 
     replay_fields['ap'] = 0.00
@@ -316,3 +317,5 @@ def handle_replay(replay):
     # Create an instance of a Replay model
     replay_model = Replay(**replay_fields)
     replay_model.save()
+    
+    return replay_fields['replay_id']

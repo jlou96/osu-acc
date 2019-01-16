@@ -2,13 +2,12 @@
 <html>
 <head>
     <title>osu!acc</title>
-    <script src='static/javascript/scripts.js'></script>
 </head>
 <body>
-    <form method="post" enctype="multipart/form-data">
+    <form action="/replay/" method="POST" enctype="multipart/form-data">
         {% csrf_token %}
-        <input type="file" name="replayFile" id="replayFileInput">
-        <button type="submit">Upload</button>
+        {{ form }}
+        <input type="submit" value="Upload">
     </form>
 </body>
 </html>
