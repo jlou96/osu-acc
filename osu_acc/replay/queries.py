@@ -52,7 +52,7 @@ def create_beatmap_entry(data):
     """
     bm_id = data['beatmap_id']
 
-    if Beatmap.objects.filter(beatmap_id=):
+    if Beatmap.objects.filter(beatmap_id=bm_id):
         return
 
     # Download beatmap file
