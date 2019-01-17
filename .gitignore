@@ -5,8 +5,12 @@ secrets.py
 __pycache__
 **/*.pyc
 
+# osu! files
+*.osu
+
 # Environment related files
 env
 
 # Database related files
+**/migrations/
 db.*

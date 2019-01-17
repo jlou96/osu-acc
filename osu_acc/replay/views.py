@@ -1,8 +1,8 @@
 from django.shortcuts import render
 from django.http import HttpResponseRedirect
 
-from . import queries
-from .forms import ReplayForm
+from osu_acc.replay import query
+from osu_acc.replay.forms import ReplayForm
 
 
 def index(request):
@@ -11,7 +11,7 @@ def index(request):
         print('Got POST request')
         form = ReplayForm(request.POST, request.FILES)
         if form.is_valid():
-            replay_id = queries.handle_replay(request.FILES['replay_file'])
+            replay_id = query.handle_replay(request.FILES['replay_file'])
             return HttpResponseRedirect('/replay/{}/'.format(replay_id))
     else:
         print('Not a POST request')
