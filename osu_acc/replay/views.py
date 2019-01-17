@@ -22,6 +22,7 @@ def index(request):
 
 def analytics(request, replay_id):
     print('analytics view method')
-    # TODO
 
-    return render(request, 'analytics.html', {'replay_id': replay_id})
+    ctx = query.get_replay_context(replay_id)
+
+    return render(request, 'analytics.html', ctx)
