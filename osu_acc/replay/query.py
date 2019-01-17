@@ -26,6 +26,8 @@ def create_timing_point_entry(bm_id, data):
     Returns:
         timing_point_model(TimingPoint): The created TimingPoint instance.
     """
+    if TimingPoint.objects.filter(beatmap_id=bm_id).exists():
+        return
 
     # Timing Points
     # Syntax: Offset, Milliseconds per Beat, Meter, 
@@ -70,6 +72,8 @@ def create_hit_object_entry(bm_id, data):
     Returns:
         hit_object_model(HitObject): The created HitObject instance.
     """
+    if HitObject.objects.filter(beatmap_id=bm_id).exists():
+        return
 
     # HitObjects
     # Syntax: x,y,time,type,hitSound...,extras
@@ -130,8 +134,8 @@ def create_beatmap_entry(json_resp):
     beatmap_fields['song_artist'] = json_resp['artist']
     beatmap_fields['beatmap_creator'] = json_resp['creator']
     beatmap_fields['beatmap_difficulty'] = json_resp['version']
-    beatmap_fields['beatmap_cs'] = json_resp['diff_size']
-    beatmap_fields['beatmap_od'] = json_resp['diff_overall']
+    beatmap_fields['beatmap_cs'] = Decimal(json_resp['diff_size'])
+    beatmap_fields['beatmap_od'] = Decimal(json_resp['diff_overall'])
 
     # Create and use TimingPoint and HitObject fields
     create_timing_point_entry(bm_id, data)
@@ -154,6 +158,8 @@ def create_replay_data_entry(parsed_replay):
     Returns:
         (ReplayEvent): A list of hit input times.
     """
+    if ReplayData.objects.filter(replay_id=parsed_replay.replay_hash).exists():
+        return
 
     replay_data_fields = {}
 
@@ -180,6 +186,9 @@ def create_replay_entry(json_resp, parsed_replay):
         parsed_replay (osrparse.Replay): The parsed replay.
     """
 
+    if Replay.objects.filter(replay_id=parsed_replay.replay_hash).exists():
+        return
+
     replay_fields = {}
 
     replay_fields['replay_id'] = parsed_replay.replay_hash
@@ -193,21 +202,29 @@ def create_replay_entry(json_resp, parsed_replay):
     replay_fields['num_raw_100'] = parsed_replay.number_100s
     replay_fields['num_raw_50']  = parsed_replay.number_50s
     replay_fields['num_raw_miss'] = parsed_replay.misses
-    replay_fields['raw_accuracy'] = util.get_accuracy(replay_fields['num_raw_300'], replay_fields['num_raw_100'],
-                                                  replay_fields['num_raw_50'], replay_fields['num_raw_miss'])
+    replay_fields['raw_accuracy'] = util.get_accuracy(replay_fields['num_raw_300'],
+                                                      replay_fields['num_raw_100'],
+                                                      replay_fields['num_raw_50'],
+                                                      replay_fields['num_raw_miss'])
     
     replay_fields['num_true_300'] = parsed_replay.number_300s
     replay_fields['num_true_100'] = parsed_replay.number_100s
     replay_fields['num_true_50']  = parsed_replay.number_50s
     replay_fields['num_true_miss'] = parsed_replay.misses
-    replay_fields['true_accuracy'] = util.get_accuracy(replay_fields['num_true_300'], replay_fields['num_true_100'],
-                                                   replay_fields['num_true_50'], replay_fields['num_true_miss'])
+    replay_fields['true_accuracy'] = util.get_accuracy(replay_fields['num_true_300'],
+                                                       replay_fields['num_true_100'],
+                                                       replay_fields['num_true_50'],
+                                                       replay_fields['num_true_miss'])
 
+    create_replay_data_entry(parsed_replay)
     replay_fields['replay_data'] = ReplayData.objects.get(replay_id=parsed_replay.replay_hash)
 
-    hit_window = util.get_hit_window(json_resp['diff_overall'])
+    hit_window = util.get_hit_window(Decimal(json_resp['diff_overall']))
     hit_objects = get_beatmap_hit_objects(json_resp['beatmap_id'])
-    replay_fields['hit_errors'] = util.get_hit_errors(json_resp['diff_size'], hit_window, parsed_replay.replay_events, hit_objects)
+    replay_fields['hit_errors'] = util.get_hit_errors(Decimal(json_resp['diff_size']),
+                                                      hit_window,
+                                                      parsed_replay.play_data,
+                                                      hit_objects)
 
     hit_error_data = util.calc_hit_error_data(replay_fields['hit_errors'])
 
@@ -232,7 +249,7 @@ def get_beatmap_hit_objects(bm_id):
     """
     Returns a list of integers representing the object hit times of the beatmap.
 
-    Equivalent to: SELECT hit_objects FROM Beatmaps WHERE beatmap_id=bm_id
+    Equivalent to: SELECT * FROM beatmap_hitobject WHERE beatmap_id = bm_id;
 
     Args:
         bm_id (str): The ID of the beatmap, given by the osu!api.
@@ -241,8 +258,7 @@ def get_beatmap_hit_objects(bm_id):
         beatmap_hit_times (List(int)): The object hit times of the beatmap.
     """
 
-    beatmap_hit_objects = Beatmap.objects.values_list('hit_objects', flat=True).get(beatmap_id=bm_id)
-    return beatmap_hit_objects
+    return HitObject.objects.get(beatmap_id=bm_id)
 
 
 def handle_replay(replay):

@@ -59,7 +59,7 @@ def get_circle_radius(circle_size):
     The pixel formula used above was retrieved from the following link on 01/16/2019.
     https://www.reddit.com/r/osugame/comments/5gd3dm/whats_the_cspixel_formula/dareob5
 
-    As osu! replay files are stored with dimensions 512x384, we will use 512 as our playfield_width.
+    As osu! replay files are stored with dimensions 512x384, and 512/16 == 32, we will use that instead.
 
     Args:
         circle_size (float): The circle size difficulty setting, ranging from 0.0 to 10.0.
@@ -68,10 +68,10 @@ def get_circle_radius(circle_size):
         (float): The radius of the circle.
     """
 
-    return (512 / 16) * (1 - 0.7 * (circle_size - 5) / 5)
+    return 32 * (1 - Decimal(0.7) * (circle_size - 5) / 5)
 
 
-def is_cursor_on_note(circle_size, replay_event, hit_object):
+def is_cursor_on_note(circle_size, replay_event, hit_object_x, hit_object_y):
     """
     Returns True if the player's cursor is on a beatmap object.
 
@@ -86,8 +86,8 @@ def is_cursor_on_note(circle_size, replay_event, hit_object):
     """
 
     r = get_circle_radius(circle_size)
-    dx = replay_event.x - hit_object.x
-    dy = replay_event.y - hit_object.y
+    dx = Decimal(replay_event.x) - hit_object_x
+    dy = Decimal(replay_event.y) - hit_object_y
 
     return sqrt(dx**2 + dy**2) < r
 
@@ -107,7 +107,7 @@ def get_hit_window(overall_diff):
         A float.
     """
 
-    return 150 + 50 * (5 - Decimal(overall_diff)) / 5
+    return 150 + 50 * (5 - overall_diff) / 5
 
 
 def get_hit_errors(cs, hit_window, replay_events, hit_objects):
@@ -119,7 +119,7 @@ def get_hit_errors(cs, hit_window, replay_events, hit_objects):
         cs (float): The beatmap's circle size difficulty.
         hit_window (float): The hit window. See get_hit_window() for more info.
         replay_events (List(ReplayEvent)): A list of all osrparse.ReplayEvents.
-        hit_object_times (List(int)): A list of all hit object times in a beatmap.
+        hit_object (List(HitObject)): A list of all hit object in a beatmap.
 
     Returns:
         An array containing all hit errors in chronological order.
@@ -129,7 +129,7 @@ def get_hit_errors(cs, hit_window, replay_events, hit_objects):
 
     i, j, prev_inp_time = 0, 0, 0
 
-    while i < len(replay_events) and j < len(hit_objects):
+    while i < len(replay_events) and j < len(hit_objects.hit_object_times):
         # Map each beatmap object with the earliest replay input
         # that falls within the object's hit window.
 
@@ -139,16 +139,23 @@ def get_hit_errors(cs, hit_window, replay_events, hit_objects):
         prev_inp_time = curr_inp_time
 
         # Hit Object times are represented absolutely.
-        curr_obj_time = hit_objects[j].time
+        curr_obj_time = hit_objects.hit_object_times[j]
+
+        # Debugging
+        print('replay_event[{i}].t: {t}'.format(i=i, t=replay_events[i].time_since_previous_action))
+        #print('replay_event[{i}].x: {x}'.format(i=i, x=replay_events[i].x))
+        #print('replay_event[{i}].y: {y}'.format(i=i, y=replay_events[i].y))
 
         # Store the earliest input within the current object's hit window.
         curr_hit_error = curr_inp_time - curr_obj_time
 
-        if abs(curr_hit_error) < hit_window and is_cursor_on_note(cs, replay_events[i], hit_objects[j]):
-            hit_errors.append(curr_hit_error)
-
+        if abs(curr_hit_error) < hit_window and is_cursor_on_note(cs, replay_events[i], hit_objects.x_coords[j], hit_objects.y_coords[j]):
+            hit_errors.append(Decimal(curr_hit_error))
+            # print('Appended hit error of {0}'.format(curr_hit_error))
             j += 1
-
+        else:
+            # print('Did not append hit error of {0} as it exceeds hit window of {1}'.format(curr_hit_error, hit_window))
+            pass
         i += 1
 
     return hit_errors
@@ -175,7 +182,7 @@ def calc_hit_error_data(hit_errors):
         elif error < 0:
             neg_errors.append(error)
         abs_errors.append(abs(error))
-    
+
     data['min_pos'] = min(pos_errors)
     data['max_pos'] = max(pos_errors)
     data['avg_pos'] = sum(pos_errors) / len(pos_errors)

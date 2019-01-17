@@ -45,5 +45,5 @@ class Beatmap(models.Model):
     beatmap_difficulty = models.CharField(max_length=32)
     beatmap_cs = models.DecimalField(max_digits=3, decimal_places=1)
     beatmap_od = models.DecimalField(max_digits=3, decimal_places=1)
-    song_title = models.CharField(max_length=32)
-    song_artist = models.CharField(max_length=32)
+    song_title = models.CharField(max_length=128)
+    song_artist = models.CharField(max_length=64)
