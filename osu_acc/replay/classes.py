@@ -75,4 +75,4 @@ class HitObject():
 
 
     def is_spinner(self):
-        return self._obj_type & 0b1111 == 0b1000
+        return self._obj_type & 0b1011 == 0b1000
