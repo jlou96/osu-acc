@@ -54,6 +54,9 @@ class Replay(models.Model):
     # HIT ERRORS
     hit_errors = ArrayField(models.DecimalField(max_digits=5, decimal_places=2))
 
+    num_pos_hit_error = models.PositiveSmallIntegerField()
+    num_neg_hit_error = models.PositiveSmallIntegerField()
+
     min_neg_hit_error = models.DecimalField(max_digits=5, decimal_places=2)
     max_neg_hit_error = models.DecimalField(max_digits=5, decimal_places=2)
     avg_neg_hit_error = models.DecimalField(max_digits=5, decimal_places=2)

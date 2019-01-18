@@ -17,7 +17,7 @@ class TimingPoint(models.Model):
 
 class HitObject(models.Model):
     """
-    Represents a timing point.
+    Represents a hit object.
     """
     # Let Django automatically generate primary key
     
@@ -27,6 +27,7 @@ class HitObject(models.Model):
     x_coords = ArrayField(models.DecimalField(max_digits=5, decimal_places=2))
     y_coords = ArrayField(models.DecimalField(max_digits=5, decimal_places=2))
     hit_object_times = ArrayField(models.DecimalField(max_digits=9, decimal_places=2))
+    hit_object_types = ArrayField(models.PositiveIntegerField())
 
 
 class Beatmap(models.Model):

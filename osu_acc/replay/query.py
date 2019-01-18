@@ -6,6 +6,7 @@ from decimal import Decimal
 from requests import get
 
 from osu_acc.replay import util
+from osu_acc.replay import classes
 from osu_acc.replay.models import Replay, ReplayData
 from osu_acc.beatmap.models import Beatmap, TimingPoint, HitObject
 
@@ -14,27 +15,27 @@ from osu_acc.beatmap.models import Beatmap, TimingPoint, HitObject
 # REPLAY MODELS
 # =============================================================================
 
-def create_replay_data_entry(parsed_replay):
+def create_replay_data_entry(replay_id, replay_events):
     """
-    Given an osrparse.Replay instance, create and save a ReplayEvent instance.
+    Given a list of classes.ReplayEvents, create and save a models.ReplayData instance.
 
     Args:
-        replay_data (List(osrparse.ReplayEvent)): The replay data.
+        replay_events (List(classes.ReplayEvent)): The replay data.
     """
-    if ReplayData.objects.filter(replay_id=parsed_replay.replay_hash).exists():
+    if ReplayData.objects.filter(replay_id=replay_id).exists():
         return
 
     replay_data_fields = {}
 
-    replay_data_fields['replay_id'] = parsed_replay.replay_hash
+    replay_data_fields['replay_id'] = replay_id
     replay_data_fields['x_coords'] = []
     replay_data_fields['y_coords'] = []
     replay_data_fields['hit_object_times'] = []
 
-    for replay_event in parsed_replay.play_data:
+    for replay_event in replay_events:
         replay_data_fields['x_coords'].append(replay_event.x)
         replay_data_fields['y_coords'].append(replay_event.y)
-        replay_data_fields['hit_object_times'].append(replay_event.time_since_previous_action)
+        replay_data_fields['hit_object_times'].append(replay_event.time)
 
     replay_data_model = ReplayData(**replay_data_fields)
     replay_data_model.save()
@@ -64,8 +65,8 @@ def select_replay_data_field(replay_id, field):
         # Raise a proper exception
         return None
 
-    query_set = Replay.objects.filter(replay_id=replay_id).values(field)
-    return query_set[field]
+    replay = Replay.objects.get(replay_id=replay_id)
+    return getattr(replay, field)
 
 
 def create_replay_entry(json_resp, parsed_replay):
@@ -82,6 +83,14 @@ def create_replay_entry(json_resp, parsed_replay):
 
     replay_fields = {}
 
+    # CONVERTING TYPES
+    circle_size = Decimal(json_resp['diff_size'])
+    overall_diff = Decimal(json_resp['diff_overall'])
+    hit_objects_models = select_beatmap_field(json_resp['beatmap_id'], 'hit_object')
+    hit_objects = util.convert_hit_object_model_to_class(hit_objects_models)
+    replay_events = util.convert_osrp_play_data_to_class(parsed_replay.play_data)
+
+    # POPULATING FIELD DICTIONARY
     replay_fields['replay_id'] = parsed_replay.replay_hash
     replay_fields['beatmap'] = Beatmap.objects.get(beatmap_id=json_resp['beatmap_id'])
     replay_fields['play_date'] = parsed_replay.timestamp
@@ -97,39 +106,28 @@ def create_replay_entry(json_resp, parsed_replay):
                                                       replay_fields['num_raw_100'],
                                                       replay_fields['num_raw_50'],
                                                       replay_fields['num_raw_miss'])
+
     
-    replay_fields['num_true_300'] = parsed_replay.number_300s
-    replay_fields['num_true_100'] = parsed_replay.number_100s
-    replay_fields['num_true_50']  = parsed_replay.number_50s
-    replay_fields['num_true_miss'] = parsed_replay.misses
+    true_acc_fields = util.get_true_accuracy_fields(circle_size,
+                                                    overall_diff,
+                                                    replay_events,
+                                                    hit_objects)
+    replay_fields = {**replay_fields, **true_acc_fields}
     replay_fields['true_accuracy'] = util.get_accuracy(replay_fields['num_true_300'],
                                                        replay_fields['num_true_100'],
                                                        replay_fields['num_true_50'],
                                                        replay_fields['num_true_miss'])
 
-    create_replay_data_entry(parsed_replay)
+    create_replay_data_entry(parsed_replay.replay_hash, replay_events)
     replay_fields['replay_data'] = ReplayData.objects.get(replay_id=parsed_replay.replay_hash)
 
-    hit_window = util.get_hit_window(Decimal(json_resp['diff_overall']))
-    hit_objects = select_beatmap_field(json_resp['beatmap_id'], 'hit_object')
-    replay_fields['hit_errors'] = util.get_hit_errors(Decimal(json_resp['diff_size']),
-                                                      hit_window,
-                                                      parsed_replay.play_data,
+    replay_fields['hit_errors'] = util.get_hit_errors(circle_size,
+                                                      overall_diff,
+                                                      replay_events,
                                                       hit_objects)
 
     hit_error_data = util.calc_hit_error_data(replay_fields['hit_errors'])
-
-    replay_fields['min_neg_hit_error'] = hit_error_data['min_neg']
-    replay_fields['max_neg_hit_error'] = hit_error_data['max_neg']
-    replay_fields['avg_neg_hit_error'] = hit_error_data['avg_neg']
-
-    replay_fields['min_pos_hit_error'] = hit_error_data['min_pos']
-    replay_fields['max_pos_hit_error'] = hit_error_data['max_pos']
-    replay_fields['avg_pos_hit_error'] = hit_error_data['avg_pos']
-
-    replay_fields['min_abs_hit_error'] = hit_error_data['min_abs']
-    replay_fields['max_abs_hit_error'] = hit_error_data['max_abs']
-    replay_fields['avg_abs_hit_error'] = hit_error_data['avg_abs']
+    replay_fields = {**replay_fields, **hit_error_data}
 
     # Create an instance of a Replay model
     replay_model = Replay(**replay_fields)
@@ -182,8 +180,8 @@ def select_replay_field(replay_id, field):
         # Raise a proper exception
         return None
 
-    query_set = ReplayData.objects.filter(replay_id=replay_id).values(field)
-    return query_set[field]
+    replaydata = ReplayData.objects.get(replay_id=replay_id)
+    return getattr(replaydata, field)
 
 
 # =============================================================================
@@ -262,8 +260,8 @@ def select_timing_point_field(beatmap_id, field):
         # Raise a proper exception
         return None
 
-    query_set = TimingPoint.objects.filter(beatmap_id=beatmap_id).values(field)
-    return query_set[field]
+    timingpoint = TimingPoint.objects.get(beatmap_id=beatmap_id)
+    return getattr(timingpoint, field)
 
 
 def create_hit_object_entry(bm_id, data):
@@ -290,6 +288,7 @@ def create_hit_object_entry(bm_id, data):
     hit_object_fields['x_coords'] = []
     hit_object_fields['y_coords'] = []
     hit_object_fields['hit_object_times'] = []
+    hit_object_fields['hit_object_types'] = []
 
     is_hit_object = False
 
@@ -306,8 +305,10 @@ def create_hit_object_entry(bm_id, data):
                 hit_object_fields['x_coords'].append(x)
                 y = line.split(',')[1]
                 hit_object_fields['y_coords'].append(y)
-                time = line.split(',')[2]
-                hit_object_fields['hit_object_times'].append(time)
+                obj_time = line.split(',')[2]
+                hit_object_fields['hit_object_times'].append(obj_time)
+                obj_type = line.split(',')[3]
+                hit_object_fields['hit_object_types'].append(obj_type)
 
     hit_object_model = HitObject(**hit_object_fields)
     hit_object_model.save()
@@ -337,8 +338,8 @@ def select_hit_object_field(beatmap_id, field):
         # Raise a proper exception
         return None
 
-    query_set = HitObject.objects.filter(beatmap_id=beatmap_id).values(field)
-    return query_set[field]
+    hitobject = HitObject.objects.get(beatmap_id=beatmap_id)
+    return getattr(hitobject, field)
 
 
 def create_beatmap_entry(json_resp):
@@ -416,5 +417,5 @@ def select_beatmap_field(beatmap_id, field):
         # Raise a proper exception
         return None
 
-    query_set = Beatmap.objects.filter(beatmap_id=beatmap_id).values(field)
-    return query_set[field]
+    beatmap = Beatmap.objects.get(beatmap_id=beatmap_id)
+    return getattr(beatmap, field)

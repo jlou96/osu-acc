@@ -56,6 +56,9 @@ def get_replay_context(replay_id):
     ctx['num_true_50'] = replay.num_true_50
     ctx['num_true_miss'] = replay.num_true_miss
 
+    ctx['num_pos_hit_error'] = replay.num_pos_hit_error
+    ctx['num_neg_hit_error'] = replay.num_neg_hit_error
+
     ctx['min_neg_hit_error'] = replay.min_neg_hit_error
     ctx['max_neg_hit_error'] = replay.max_neg_hit_error
     ctx['avg_neg_hit_error'] = replay.avg_neg_hit_error
