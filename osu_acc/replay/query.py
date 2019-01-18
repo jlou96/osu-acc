@@ -1,152 +1,18 @@
 """
-A module to handle queries from client.
+A module to handle queries on the DB.
 """
 
 from decimal import Decimal
+from requests import get
 
-import requests
-import osrparse as osrp
-
-import osu_acc.replay.util as util
+from osu_acc.replay import util
 from osu_acc.replay.models import Replay, ReplayData
 from osu_acc.beatmap.models import Beatmap, TimingPoint, HitObject
-from secrets import OSU_API_KEY
-
-OSU_API_ENDPOINT = 'https://osu.ppy.sh/api/get_beatmaps'
 
 
-def create_timing_point_entry(bm_id, data):
-    """
-    Create and save a TimingPoint entry.
-
-    Args:
-        bm_id (str): The id of the beatmap associated.
-        data (List(str)): The beatmap data as a list of strings.
-
-    Returns:
-        timing_point_model(TimingPoint): The created TimingPoint instance.
-    """
-    if TimingPoint.objects.filter(beatmap_id=bm_id).exists():
-        return
-
-    # Timing Points
-    # Syntax: Offset, Milliseconds per Beat, Meter, 
-    #         Sample Set, Sample Index, Volume, Inherited, Kiai Mode
-    # For our purposes, we only need the first three fields.
-    # We will also convert all ms/beat values to positive.
-    timing_point_fields = {}
-    timing_point_fields['beatmap_id'] = bm_id
-    timing_point_fields['offsets'] = []
-    timing_point_fields['ms_per_beats'] = []
-
-    is_timing_point = False
-
-    for line in data:
-        if line.strip() == '[TimingPoints]':
-            is_timing_point = True
-            continue
-        
-        if is_timing_point:
-            # There is always an empty line before the start of the next section
-            # Use it to identify when the current section ends
-            if not line.strip():
-                is_timing_point = False
-            else:
-                offset = int(line.split(',')[0])
-                timing_point_fields['offsets'].append(offset)
-                ms_per_beat = Decimal(line.split(',')[1])
-                timing_point_fields['ms_per_beats'].append(round(ms_per_beat, 2))
-
-    timing_point_model = TimingPoint(**timing_point_fields)
-    timing_point_model.save()
-
-
-def create_hit_object_entry(bm_id, data):
-    """
-    Create and save a HitObject entry.
-
-    Args:
-        bm_id (str): The id of the beatmap associated.
-        data (List(str)): The beatmap data as a list of strings.
-
-    Returns:
-        hit_object_model(HitObject): The created HitObject instance.
-    """
-    if HitObject.objects.filter(beatmap_id=bm_id).exists():
-        return
-
-    # HitObjects
-    # Syntax: x,y,time,type,hitSound...,extras
-    # For our purposes, we only need the time field
-    hit_object_fields = {}
-    hit_object_fields['beatmap_id'] = bm_id
-    hit_object_fields['x_coords'] = []
-    hit_object_fields['y_coords'] = []
-    hit_object_fields['hit_object_times'] = []
-
-    is_hit_object = False
-
-    for line in data:
-        if line.strip() == '[HitObjects]':
-            is_hit_object = True
-            continue
-
-        if is_hit_object:
-            if not line.strip():
-                is_hit_object = False
-            else:
-                x = line.split(',')[0]
-                hit_object_fields['x_coords'].append(x)
-                y = line.split(',')[1]
-                hit_object_fields['y_coords'].append(y)
-                time = line.split(',')[2]
-                hit_object_fields['hit_object_times'].append(time)
-
-    hit_object_model = HitObject(**hit_object_fields)
-    hit_object_model.save()
-
-
-def create_beatmap_entry(json_resp):
-    """
-    Given a beatmap's API response as JSON, populate the database with the appropriate information.
-    """
-    bm_id = json_resp['beatmap_id']
-
-    if Beatmap.objects.filter(beatmap_id=bm_id).exists():
-        return
-
-    # Download beatmap file
-    OSU_BEATMAP_ENDPOINT = 'https://osu.ppy.sh/osu/'
-    response = requests.get(OSU_BEATMAP_ENDPOINT + bm_id)
-
-    with open(bm_id + '.osu', 'wb') as f:
-        f.write(response.content)
-
-    with open(bm_id + '.osu', 'r') as f:
-        data = f.readlines()
-
-    # Parse beatmap file for required data
-    beatmap_fields = {}
-
-    beatmap_fields['beatmap_id'] = bm_id
-
-    beatmap_fields['song_title'] = json_resp['title']
-    beatmap_fields['song_artist'] = json_resp['artist']
-    beatmap_fields['beatmap_creator'] = json_resp['creator']
-    beatmap_fields['beatmap_difficulty'] = json_resp['version']
-    beatmap_fields['beatmap_cs'] = Decimal(json_resp['diff_size'])
-    beatmap_fields['beatmap_od'] = Decimal(json_resp['diff_overall'])
-
-    # Create and use TimingPoint and HitObject fields
-    create_timing_point_entry(bm_id, data)
-    beatmap_fields['timing_point'] = TimingPoint.objects.get(beatmap_id=bm_id)
-    create_hit_object_entry(bm_id, data)
-    beatmap_fields['hit_object'] = HitObject.objects.get(beatmap_id=bm_id)
-    
-    # Create Beatmap model instance and save to DB
-    beatmap_model = Beatmap(**beatmap_fields)
-    beatmap_model.save()
-
+# =============================================================================
+# REPLAY MODELS
+# =============================================================================
 
 def create_replay_data_entry(parsed_replay):
     """
@@ -154,9 +20,6 @@ def create_replay_data_entry(parsed_replay):
 
     Args:
         replay_data (List(osrparse.ReplayEvent)): The replay data.
-
-    Returns:
-        (ReplayEvent): A list of hit input times.
     """
     if ReplayData.objects.filter(replay_id=parsed_replay.replay_hash).exists():
         return
@@ -175,6 +38,34 @@ def create_replay_data_entry(parsed_replay):
 
     replay_data_model = ReplayData(**replay_data_fields)
     replay_data_model.save()
+
+
+def select_replay_data_field(replay_id, field):
+    """
+    Returns the value of the field of a specific ReplayData entry.
+
+    Equivalent to: SELECT field FROM replay_replaydata WHERE replay_id = replay_id;
+
+    Args:
+        replay_id (str): The hash of the replay, given by osrparse.
+
+    Returns:
+        query_set[field]: The field requested.
+        Is of type: str, List(Decimal).
+    """
+
+    valid_keys = set([
+        'x_coords',
+        'y_coords',
+        'hit_object_times',
+    ])
+
+    if field not in valid_keys:
+        # Raise a proper exception
+        return None
+
+    query_set = Replay.objects.filter(replay_id=replay_id).values(field)
+    return query_set[field]
 
 
 def create_replay_entry(json_resp, parsed_replay):
@@ -220,7 +111,7 @@ def create_replay_entry(json_resp, parsed_replay):
     replay_fields['replay_data'] = ReplayData.objects.get(replay_id=parsed_replay.replay_hash)
 
     hit_window = util.get_hit_window(Decimal(json_resp['diff_overall']))
-    hit_objects = get_beatmap_hit_objects(json_resp['beatmap_id'])
+    hit_objects = select_beatmap_field(json_resp['beatmap_id'], 'hit_object')
     replay_fields['hit_errors'] = util.get_hit_errors(Decimal(json_resp['diff_size']),
                                                       hit_window,
                                                       parsed_replay.play_data,
@@ -245,107 +136,285 @@ def create_replay_entry(json_resp, parsed_replay):
     replay_model.save()
 
 
-def get_beatmap_hit_objects(bm_id):
+def select_replay_field(replay_id, field):
     """
-    Returns a list of integers representing the object hit times of the beatmap.
+    Returns the value of the field of a specific Replay entry.
 
-    Equivalent to: SELECT * FROM beatmap_hitobject WHERE beatmap_id = bm_id;
+    Equivalent to: SELECT field FROM replay_replay WHERE replay_id = replay_id;
 
     Args:
-        bm_id (str): The ID of the beatmap, given by the osu!api.
-    
+        replay_id (str): The hash of the replay, given by osrparse.
+
     Returns:
-        beatmap_hit_times (List(int)): The object hit times of the beatmap.
+        query_set[field]: The field requested.
+        Is of type: str, Beatmap, DateTime, Decimal, int, List(Decimal)
     """
 
-    return HitObject.objects.get(beatmap_id=bm_id)
+    valid_keys = set([
+        'beatmap',
+        'replay_data',
+        'play_date',
+        'pp',
+        'raw_accuracy',
+        'num_raw_300',
+        'num_raw_100',
+        'num_raw_50',
+        'num_raw_miss',
+        'ap',
+        'true_accuracy',
+        'num_true_300',
+        'num_true_100',
+        'num_true_50',
+        'num_true_miss',
+        'hit_errors',
+        'min_neg_hit_error',
+        'max_neg_hit_error',
+        'avg_neg_hit_error',
+        'min_pos_hit_error',
+        'max_pos_hit_error',
+        'avg_pos_hit_error',
+        'min_abs_hit_error',
+        'max_abs_hit_error',
+        'avg_abs_hit_error',
+    ])
+
+    if field not in valid_keys:
+        # Raise a proper exception
+        return None
+
+    query_set = ReplayData.objects.filter(replay_id=replay_id).values(field)
+    return query_set[field]
 
 
-def get_replay_context(replay_id):
+# =============================================================================
+# BEATMAP MODELS
+# =============================================================================
+
+
+def create_timing_point_entry(bm_id, data):
     """
-    Returns all the context variables to pass to template given a replay ID.
+    Create and save a TimingPoint entry.
+
+    Equivalent to: INSERT INTO beatmap_timingpoint (fields) VALUES (values);
 
     Args:
-        replay_id (str): The replay ID.
+        bm_id (str): The id of the beatmap associated.
+        data (List(str)): The beatmap data as a list of strings.
 
     Returns:
-        ctx (dict): The context.
+        timing_point_model(TimingPoint): The created TimingPoint instance.
     """
-
-    replay = Replay.objects.get(replay_id=replay_id)
-
-    ctx = {}
-
-    ctx['replay_id'] = replay_id
-    ctx['play_date'] = replay.play_date
-
-    ctx['song_artist'] = replay.beatmap.song_artist
-    ctx['song_title'] = replay.beatmap.song_title
-
-    ctx['beatmap_id'] = replay.beatmap.beatmap_id
-    ctx['beatmap_creator'] = replay.beatmap.beatmap_creator
-    ctx['beatmap_cs'] = replay.beatmap.beatmap_cs
-    ctx['beatmap_od'] = replay.beatmap.beatmap_od
-
-    ctx['raw_accuracy'] = replay.raw_accuracy
-    ctx['num_raw_300'] = replay.num_raw_300
-    ctx['num_raw_100'] = replay.num_raw_100
-    ctx['num_raw_50'] = replay.num_raw_50
-    ctx['num_raw_miss'] = replay.num_raw_miss
-
-    ctx['true_accuracy'] = replay.true_accuracy
-    ctx['num_true_300'] = replay.num_true_300
-    ctx['num_true_100'] = replay.num_true_100
-    ctx['num_true_50'] = replay.num_true_50
-    ctx['num_true_miss'] = replay.num_true_miss
-
-    ctx['min_neg_hit_error'] = replay.min_neg_hit_error
-    ctx['max_neg_hit_error'] = replay.max_neg_hit_error
-    ctx['avg_neg_hit_error'] = replay.avg_neg_hit_error
-
-    ctx['min_pos_hit_error'] = replay.min_pos_hit_error
-    ctx['max_pos_hit_error'] = replay.max_pos_hit_error
-    ctx['avg_pos_hit_error'] = replay.avg_pos_hit_error
-
-    ctx['min_abs_hit_error'] = replay.min_abs_hit_error
-    ctx['max_abs_hit_error'] = replay.max_abs_hit_error
-    ctx['avg_abs_hit_error'] = replay.avg_abs_hit_error
-
-    return ctx
-
-
-def handle_replay(replay):
-    """
-    Given an uploaded osu! replay file, retrieve the data
-    necessary to create a Replay model and write it to DB.
-
-    Args:
-        replay: A replay file.
-
-    Returns:
-        Nothing.
-    """
-    # Parse the local replay file and extract data
-    parsed_replay = osrp.parse_replay_file(replay.temporary_file_path())
-    beatmap_hash  = parsed_replay.beatmap_hash
-
-    # Make a call to osu!api to request beatmap metadata
-    payload  = {'k': OSU_API_KEY, 'h': beatmap_hash}
-    response = requests.get(OSU_API_ENDPOINT, payload)
-
-    # Returns a JSON list with one element containing our beatmap info
-    json_resp = response.json()[0]
-
-    # If the song is longer than 999,999.99ms (16m 40s), reject
-    if int(json_resp['total_length']) >= 1000:
-        # TODO: Write a proper exception for this.
-        print('Do not replays of maps longer than 16:40.')
+    if TimingPoint.objects.filter(beatmap_id=bm_id).exists():
         return
 
-    # If there a Beatmap model of this Replay's beatmap does not exist, create it
-    if not Beatmap.objects.filter(beatmap_id=json_resp['beatmap_id']).exists():
-        create_beatmap_entry(json_resp)
-    
-    create_replay_entry(json_resp, parsed_replay)
+    # Timing Points
+    # Syntax: Offset, Milliseconds per Beat, Meter, 
+    #         Sample Set, Sample Index, Volume, Inherited, Kiai Mode
+    # For our purposes, we only need the first three fields.
+    # We will also convert all ms/beat values to positive.
+    timing_point_fields = {}
+    timing_point_fields['beatmap_id'] = bm_id
+    timing_point_fields['offsets'] = []
+    timing_point_fields['ms_per_beats'] = []
 
-    return parsed_replay.replay_hash
+    is_timing_point = False
+
+    for line in data:
+        if line.strip() == '[TimingPoints]':
+            is_timing_point = True
+            continue
+        
+        if is_timing_point:
+            # There is always an empty line before the start of the next section
+            # Use it to identify when the current section ends
+            if not line.strip():
+                is_timing_point = False
+            else:
+                offset = int(line.split(',')[0])
+                timing_point_fields['offsets'].append(offset)
+                ms_per_beat = Decimal(line.split(',')[1])
+                timing_point_fields['ms_per_beats'].append(round(ms_per_beat, 2))
+
+    timing_point_model = TimingPoint(**timing_point_fields)
+    timing_point_model.save()
+
+
+def select_timing_point_field(beatmap_id, field):
+    """
+    Returns the value of the field of a specific TimingPoint entry.
+
+    Equivalent to: SELECT field FROM beatmap_timingpoint WHERE beatmap_id = beatmap_id;
+
+    Args:
+        beatmap_id (str): The id of the beatmap, given by osu!api.
+
+    Returns:
+        query_set[field]: The field requested.
+        Is of type: List(int), List(Decimal).
+    """
+
+    valid_keys = set([
+        'offsets',
+        'ms_per_beats',
+    ])
+
+    if field not in valid_keys:
+        # Raise a proper exception
+        return None
+
+    query_set = TimingPoint.objects.filter(beatmap_id=beatmap_id).values(field)
+    return query_set[field]
+
+
+def create_hit_object_entry(bm_id, data):
+    """
+    Create and save a HitObject entry.
+
+    Equivalent to: INSERT INTO beatmap_hitobject (fields) VALUES (values);
+
+    Args:
+        bm_id (str): The id of the beatmap associated.
+        data (List(str)): The beatmap data as a list of strings.
+
+    Returns:
+        hit_object_model(HitObject): The created HitObject instance.
+    """
+    if HitObject.objects.filter(beatmap_id=bm_id).exists():
+        return
+
+    # HitObjects
+    # Syntax: x,y,time,type,hitSound...,extras
+    # For our purposes, we only need the time field
+    hit_object_fields = {}
+    hit_object_fields['beatmap_id'] = bm_id
+    hit_object_fields['x_coords'] = []
+    hit_object_fields['y_coords'] = []
+    hit_object_fields['hit_object_times'] = []
+
+    is_hit_object = False
+
+    for line in data:
+        if line.strip() == '[HitObjects]':
+            is_hit_object = True
+            continue
+
+        if is_hit_object:
+            if not line.strip():
+                is_hit_object = False
+            else:
+                x = line.split(',')[0]
+                hit_object_fields['x_coords'].append(x)
+                y = line.split(',')[1]
+                hit_object_fields['y_coords'].append(y)
+                time = line.split(',')[2]
+                hit_object_fields['hit_object_times'].append(time)
+
+    hit_object_model = HitObject(**hit_object_fields)
+    hit_object_model.save()
+
+
+def select_hit_object_field(beatmap_id, field):
+    """
+    Returns the value of the field of a specific HitObject entry.
+
+    Equivalent to: SELECT field FROM beatmap_hitobject WHERE beatmap_id = beatmap_id;
+
+    Args:
+        beatmap_id (str): The id of the beatmap, given by osu!api.
+
+    Returns:
+        query_set[field]: The field requested.
+        Is of type: List(Decimal).
+    """
+
+    valid_keys = set([
+        'x_coords',
+        'y_coords',
+        'hit_object_times',
+    ])
+
+    if field not in valid_keys:
+        # Raise a proper exception
+        return None
+
+    query_set = HitObject.objects.filter(beatmap_id=beatmap_id).values(field)
+    return query_set[field]
+
+
+def create_beatmap_entry(json_resp):
+    """
+    Given a beatmap's API response as JSON,
+    populate the database with the appropriate information.
+
+    Args:
+        json_resp (dict): The response from osu!api
+    """
+    bm_id = json_resp['beatmap_id']
+
+    if Beatmap.objects.filter(beatmap_id=bm_id).exists():
+        return
+
+    # Download beatmap file
+    OSU_BEATMAP_ENDPOINT = 'https://osu.ppy.sh/osu/'
+    response = get(OSU_BEATMAP_ENDPOINT + bm_id)
+
+    with open(bm_id + '.osu', 'wb') as f:
+        f.write(response.content)
+
+    with open(bm_id + '.osu', 'r') as f:
+        data = f.readlines()
+
+    # Parse beatmap file for required data
+    beatmap_fields = {}
+
+    beatmap_fields['beatmap_id'] = bm_id
+
+    beatmap_fields['song_title'] = json_resp['title']
+    beatmap_fields['song_artist'] = json_resp['artist']
+    beatmap_fields['beatmap_creator'] = json_resp['creator']
+    beatmap_fields['beatmap_difficulty'] = json_resp['version']
+    beatmap_fields['beatmap_cs'] = Decimal(json_resp['diff_size'])
+    beatmap_fields['beatmap_od'] = Decimal(json_resp['diff_overall'])
+
+    # Create and use TimingPoint and HitObject fields
+    create_timing_point_entry(bm_id, data)
+    beatmap_fields['timing_point'] = TimingPoint.objects.get(beatmap_id=bm_id)
+    create_hit_object_entry(bm_id, data)
+    beatmap_fields['hit_object'] = HitObject.objects.get(beatmap_id=bm_id)
+
+    # Create Beatmap model instance and save to DB
+    beatmap_model = Beatmap(**beatmap_fields)
+    beatmap_model.save()
+
+
+def select_beatmap_field(beatmap_id, field):
+    """
+    Returns the value of the field of a specific Beatmap entry.
+
+    Equivalent to: SELECT field FROM beatmap_beatmap WHERE beatmap_id = beatmap_id;
+
+    Args:
+        beatmap_id (str): The id of the beatmap, given by osu!api.
+
+    Returns:
+        query_set[field]: The field requested.
+        Is of type: TimingPoint, HitObject, str, Decimal.
+    """
+
+    valid_keys = set([
+        'timing_point',
+        'hit_object',
+        'beatmap_creator',
+        'beatmap_difficulty',
+        'beatmap_cs',
+        'beatmap_od',
+        'song_title',
+        'song_artist',
+    ])
+
+    if field not in valid_keys:
+        # Raise a proper exception
+        return None
+
+    query_set = Beatmap.objects.filter(beatmap_id=beatmap_id).values(field)
+    return query_set[field]

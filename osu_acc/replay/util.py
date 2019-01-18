@@ -36,7 +36,7 @@ def get_accuracy(a, b, c, d):
     """
     numer = 300*a + 100*b + 50*c
     denom = 300*(a + b + c + d)
-    raw = Decimal(numer/denom)
+    raw = 100 * Decimal(numer/denom)
 
     return round(raw, 2)
 
@@ -44,7 +44,7 @@ def get_accuracy(a, b, c, d):
 def get_circle_radius(circle_size):
     """
     Given a beatmap's CS difficulty, return the circle radius in pixels.
-    
+
     osu! itself uses an abstract osu!pixel type and can be calculated as follows:
 
     circle_radius = 32 * (1 - 0.7 * (circle_size - 5) / 5)
@@ -59,7 +59,7 @@ def get_circle_radius(circle_size):
     The pixel formula used above was retrieved from the following link on 01/16/2019.
     https://www.reddit.com/r/osugame/comments/5gd3dm/whats_the_cspixel_formula/dareob5
 
-    As osu! replay files are stored with dimensions 512x384, and 512/16 == 32, we will use that instead.
+    As osu! replay files have dimensions 512x384, and 512/16 == 32, we will use that instead.
 
     Args:
         circle_size (float): The circle size difficulty setting, ranging from 0.0 to 10.0.
@@ -104,13 +104,13 @@ def get_hit_window(overall_diff):
         od (float): The beatmap's overall difficulty.
     
     Returns:
-        A float.
+        (float) The hit window.
     """
 
     return 150 + 50 * (5 - overall_diff) / 5
 
 
-def get_hit_errors(cs, hit_window, replay_events, hit_objects):
+def get_hit_errors(circle_size, hit_window, replay_events, hit_objects):
     """
     Given an input replay play data and its beatmap's hit objects' times,
     return a list of hit errors.
@@ -126,12 +126,11 @@ def get_hit_errors(cs, hit_window, replay_events, hit_objects):
     """
 
     hit_errors = []
-
     i, j, prev_inp_time = 0, 0, 0
 
+    # Map each beatmap object with the earliest replay input
+    # that falls within the object's hit window.
     while i < len(replay_events) and j < len(hit_objects.hit_object_times):
-        # Map each beatmap object with the earliest replay input
-        # that falls within the object's hit window.
 
         # Replays store input times relative to the previous input.
         # Convert to absolute times.
@@ -141,21 +140,16 @@ def get_hit_errors(cs, hit_window, replay_events, hit_objects):
         # Hit Object times are represented absolutely.
         curr_obj_time = hit_objects.hit_object_times[j]
 
-        # Debugging
-        print('replay_event[{i}].t: {t}'.format(i=i, t=replay_events[i].time_since_previous_action))
-        #print('replay_event[{i}].x: {x}'.format(i=i, x=replay_events[i].x))
-        #print('replay_event[{i}].y: {y}'.format(i=i, y=replay_events[i].y))
-
         # Store the earliest input within the current object's hit window.
         curr_hit_error = curr_inp_time - curr_obj_time
 
-        if abs(curr_hit_error) < hit_window and is_cursor_on_note(cs, replay_events[i], hit_objects.x_coords[j], hit_objects.y_coords[j]):
+        in_hit_window = abs(curr_hit_error) < hit_window
+        cursor_on_note = is_cursor_on_note(circle_size, replay_events[i], hit_objects.x_coords[j], hit_objects.y_coords[j])
+
+        if in_hit_window and cursor_on_note:
             hit_errors.append(Decimal(curr_hit_error))
-            # print('Appended hit error of {0}'.format(curr_hit_error))
             j += 1
-        else:
-            # print('Did not append hit error of {0} as it exceeds hit window of {1}'.format(curr_hit_error, hit_window))
-            pass
+
         i += 1
 
     return hit_errors
