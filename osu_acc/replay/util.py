@@ -178,7 +178,7 @@ def associate_hits(circle_size, overall_diff, replay_events, hit_objects):
 
     i, j = 0, 0
 
-    # Map each beatmap object with the earliest replay input
+    # Associate each beatmap object with the earliest replay input
     # that falls within the object's hit window.
     while i < len(replay_events) and j < len(hit_objects):
         if hit_objects[j].is_circle:

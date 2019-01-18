@@ -67,12 +67,12 @@ class HitObject():
 
 
     def is_circle(self):
-        return self._obj_type & 0b1
+        return self._obj_type & 0b1 == 0b1
 
 
     def is_slider(self):
-        return self._obj_type & 0b10
+        return self._obj_type & 0b11 == 0b10
 
 
     def is_spinner(self):
-        return self._obj_type & 0b1000
+        return self._obj_type & 0b1111 == 0b1000
