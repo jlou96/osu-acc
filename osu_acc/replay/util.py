@@ -320,7 +320,8 @@ def calc_hit_error_data(hit_errors):
         elif error < 0:
             neg_errors.append(error)
         abs_errors.append(abs(error))
-    
+
+    # Just for now...
     if not pos_errors:
         pos_errors.append(Decimal(1.00))
     if not neg_errors:

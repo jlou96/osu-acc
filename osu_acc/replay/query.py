@@ -205,7 +205,6 @@ def create_timing_point_entry(bm_id, data):
     if TimingPoint.objects.filter(beatmap_id=bm_id).exists():
         return
 
-    # Timing Points
     # Syntax: Offset, Milliseconds per Beat, Meter, 
     #         Sample Set, Sample Index, Volume, Inherited, Kiai Mode
     # For our purposes, we only need the first three fields.
@@ -280,7 +279,6 @@ def create_hit_object_entry(bm_id, data):
     if HitObject.objects.filter(beatmap_id=bm_id).exists():
         return
 
-    # HitObjects
     # Syntax: x,y,time,type,hitSound...,extras
     # For our purposes, we only need the time field
     hit_object_fields = {}
