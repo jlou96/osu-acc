@@ -13,6 +13,24 @@ from osu_acc.replay import classes
 # =============================================================================
 
 
+def convert_beatmap_break_periods_to_class(break_model):
+    """
+    Converts a BreakPeriod model to a list of BreakPeriod class instances.
+    """
+
+    break_periods = []
+
+    size = len(break_model.starts)
+
+    for i in range(size):
+        start = break_model.starts[i]
+        end = break_model.ends[i]
+
+        break_periods.append(classes.BreakPeriod(start, end))
+
+    return break_periods
+
+
 def convert_osrp_play_data_to_class(play_data):
     """
     Converts a list of osrparse.ReplayEvents to a list of replay.classes.ReplayEvents.
@@ -40,7 +58,7 @@ def convert_osrp_play_data_to_class(play_data):
     return replay_events
 
 
-def convert_hit_object_model_to_class(hit_object_models):
+def convert_hit_object_model_to_class(hit_object_model):
     """
     Converts a HitObject model to a list of HitObject class instances.
 
@@ -52,13 +70,13 @@ def convert_hit_object_model_to_class(hit_object_models):
     """
 
     hit_objects = []
-    size = len(hit_object_models.hit_object_times)
+    size = len(hit_object_model.hit_object_times)
 
     for i in range(size):
-        x = hit_object_models.x_coords[i]
-        y = hit_object_models.y_coords[i]
-        obj_time = hit_object_models.hit_object_times[i]
-        obj_type = hit_object_models.hit_object_types[i]
+        x = hit_object_model.x_coords[i]
+        y = hit_object_model.y_coords[i]
+        obj_time = hit_object_model.hit_object_times[i]
+        obj_type = hit_object_model.hit_object_types[i]
 
         hit_objects.append(classes.HitObject(x, y, obj_time, obj_type))
 
@@ -159,12 +177,15 @@ def is_cursor_on_note(circle_size, replay_event, hit_object):
     return sqrt(dx**2 + dy**2) < r
 
 
-def associate_hits(circle_size, overall_diff, replay_events, hit_objects):
+def associate_hits(mode, circle_size, overall_diff, break_periods, replay_events, hit_objects):
     """
     Returns a list of tuples, associating a ReplayEvent with a HitObject
 
     Args:
+        mode (str): Either 'raw' or 'true'.
+        circle_size (Decimal): The beatmap's circle size.
         overall_diff (Decimal): The beatmap's overall difficulty.
+        break_periods (List(BreakPeriod)): A list of all break periods in a beatmap.
         replay_events (List(ReplayEvent)): A list of all osrparse.ReplayEvents.
         hit_object (List(HitObject)): A list of all hit object in a beatmap.
 
@@ -173,44 +194,88 @@ def associate_hits(circle_size, overall_diff, replay_events, hit_objects):
         Each association is a 3-tuple of the form (ReplayEvent, HitObject, hit_error)
     """
 
+    print('associate_hits() called')
+
+    valid_modes = set(['raw', 'true'])
+
+    if mode not in valid_modes:
+        # TODO: Raise a proper exception.
+        print('Error: Invalid mode {m} passed to associate_hits()'.format(m=mode))
+        return
+
     associations = []
     hit_window = get_hit_window(overall_diff, '50')
 
-    i, j = 0, 0
-
-    # Associate each beatmap object with the earliest replay input
+    # Associate each hit object with the earliest replay input
     # that falls within the object's hit window.
-    while i < len(replay_events) and j < len(hit_objects):
-        if hit_objects[j].is_circle:
-            curr_inp_time = replay_events[i].time
-            curr_obj_time = hit_objects[j].time
+    for hit_object in hit_objects:
+        is_note_associated = False
+        is_note_hit = False
+        is_note_attempted = False
+
+        # Spinners do not meaningfully affect accuracy,
+        # and thus will not be associated.
+        if hit_object.is_spinner:
+            print('HitObject is a spinner.')
+            continue
+
+        for replay_event in replay_events:
+            # If current replay input is within a break,
+            # then continue to the next input.
+            for break_period in break_periods:
+                if replay_event.time in range(break_period.start, break_period.end+1):
+                    print('ReplayEvent at {t1} within break period {t2} - {t3}'.format(t1=replay_event.time, t2=break_period.start, t3=break_period.end))
+                    continue
+
+            curr_inp_time = replay_event.time
+            curr_obj_time = hit_object.time
             curr_hit_error = curr_inp_time - curr_obj_time
 
-            # print('Iteration {i}'.format(i=i))
-            # print('Replay Event: {t}ms'.format(t=curr_inp_time))
-            # print('Hit Object  : {t}ms'.format(t=curr_obj_time))
-            # print('Hit Error   : {t}ms\n'.format(t=curr_hit_error))
+            if curr_hit_error > hit_window:
+                print('Current hit error of {he} exceeds hit window of {hw}'.format(he=curr_hit_error, hw=hit_window))
+                break
 
-            # Check if the hit error is within the hit window.
-            # If so, associate and advance input pointer until out of current object's hit window.
-            # Otherwise, continue to next replay input.
             if abs(curr_hit_error) <= hit_window:
-                association = (replay_events[i], hit_objects[j], curr_hit_error)
-                associations.append(association)
+                # Set flags
+                is_note_attempted = True
+                is_note_hit = is_cursor_on_note(circle_size, replay_event, hit_object)
 
-                j += 1
+                # Make association and append
+                curr = classes.Association(replay_event, hit_object, curr_hit_error)
+                associations.append(curr)
 
-            i += 1
-        else:
-            i += 1
-            j += 1
+            if (mode == 'raw' and is_note_hit) or (mode == 'true' and is_note_attempted):
+                print('Associated ReplayEvent at {t1} with HitObject at {t2}'.format(t1=replay_event.time, t2=hit_object.time))
+                curr = classes.Association(replay_event, hit_object, curr_hit_error)
+                associations.append(curr)
+                is_note_associated = True
+            else:
+                print('Did not associate ReplayEvent at {t1} with HitObject at {t2}'.format(t1=replay_event.time, t2=hit_object.time))
+
+            replay_event_counter += 1
+
+        if not is_note_associated:
+            print('Did not associate HitObject at {t} with any ReplayEvent'.format(t=hit_object.time))
+            curr = classes.Association(None, hit_object, None)
+            associations.append(curr)
+        print('')
 
     return associations
 
 
-def get_true_accuracy_fields(circle_size, overall_diff, replay_events, hit_objects):
+def get_true_accuracy_fields(circle_size, overall_diff, break_periods, replay_events, hit_objects):
     """
     Returns the number of true 300s, 100s, 50s and misses as a dictionary.
+
+    Args:
+        circle_size (Decimal): The beatmap's circle size difficulty.
+        overall_diff (Decimal): The beatmap's overall difficulty.
+        break_periods (List(BreakPeriod)): A list of all break periods in a beatmap.
+        replay_events (List(classes.ReplayEvent)): A list of all replay events.
+        hit_object (List(classes.HitObject)): A list of all hit object in a beatmap.
+
+    Returns:
+        fields (dict): A dictionary containing the number of each hit type.
     """
 
     fields = {}
@@ -223,19 +288,18 @@ def get_true_accuracy_fields(circle_size, overall_diff, replay_events, hit_objec
     good_window = get_hit_window(overall_diff, '100')
     bad_window = get_hit_window(overall_diff, '50')
 
-    associations = associate_hits(circle_size, overall_diff, replay_events, hit_objects)
+    associations = associate_hits('true', circle_size, overall_diff,
+                                  break_periods, replay_events, hit_objects)
 
     for association in associations:
-        curr_hit_error = association[2]
-
-        if abs(curr_hit_error) <= perf_window:
-            fields['num_true_300'] += 1
-        elif abs(curr_hit_error) <= good_window:
-            fields['num_true_100'] += 1
-        elif abs(curr_hit_error) <= bad_window:
-            fields['num_true_50'] += 1
-        else:
+        if association.hit_error is None:
             fields['num_true_miss'] += 1
+        elif abs(association.hit_error) <= perf_window:
+            fields['num_true_300'] += 1
+        elif abs(association.hit_error) <= good_window:
+            fields['num_true_100'] += 1
+        elif abs(association.hit_error) <= bad_window:
+            fields['num_true_50'] += 1
 
     return fields
 
@@ -269,11 +333,11 @@ def get_hit_window(overall_diff, score):
         hit_window = Decimal(100 + 40 * (5 - overall_diff) / 5)
     if score == '50':
         hit_window = Decimal(150 + 50 * (5 - overall_diff) / 5)
-    
+
     return hit_window
 
 
-def get_hit_errors(circle_size, overall_diff, replay_events, hit_objects):
+def get_hit_errors(circle_size, overall_diff, break_periods, replay_events, hit_objects):
     """
     Given an input replay play data and its beatmap's hit objects' times,
     return a list of hit errors.
@@ -281,6 +345,7 @@ def get_hit_errors(circle_size, overall_diff, replay_events, hit_objects):
     Args:
         circle_size (Decimal): The beatmap's circle size difficulty.
         overall_diff (Decimal): The beatmap's overall difficulty.
+        break_periods (List(BreakPeriod)): A list of all break periods in a beatmap.
         replay_events (List(classes.ReplayEvent)): A list of all replay events.
         hit_object (List(classes.HitObject)): A list of all hit object in a beatmap.
 
@@ -288,15 +353,10 @@ def get_hit_errors(circle_size, overall_diff, replay_events, hit_objects):
         An array containing all hit errors in chronological order.
     """
 
-    hit_errors = []
+    associations = associate_hits('raw', circle_size, overall_diff,
+                                  break_periods, replay_events, hit_objects)
 
-    associations = associate_hits(circle_size, overall_diff, replay_events, hit_objects)
-
-    for association in associations:
-        if is_cursor_on_note(circle_size, association[0], association[1]):
-            hit_errors.append(association[2])
-
-    return hit_errors
+    return [association.hit_error for association in associations]
 
 
 def calc_hit_error_data(hit_errors):

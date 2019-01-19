@@ -2,6 +2,19 @@ from django.db import models
 from django.contrib.postgres.fields import ArrayField
 
 
+class BreakPeriod(models.Model):
+    """
+    Represents a break.
+    """
+    # Let Django automatically generate primary key
+
+    # Reference parent Beatmap
+    beatmap_id = models.CharField(max_length=64)
+
+    starts = ArrayField(models.PositiveIntegerField(blank=True, null=True))
+    ends = ArrayField(models.PositiveIntegerField(blank=True, null=True))
+
+
 class TimingPoint(models.Model):
     """
     Represents a timing point.
@@ -20,7 +33,7 @@ class HitObject(models.Model):
     Represents a hit object.
     """
     # Let Django automatically generate primary key
-    
+
     # Reference parent Beatmap
     beatmap_id = models.CharField(max_length=64)
 
@@ -38,6 +51,7 @@ class Beatmap(models.Model):
     beatmap_id = models.CharField(max_length=64, primary_key=True)
 
     # ONE-TO-ONE
+    break_period = models.OneToOneField(BreakPeriod, on_delete=models.CASCADE)
     timing_point = models.OneToOneField(TimingPoint, on_delete=models.CASCADE)
     hit_object = models.OneToOneField(HitObject, on_delete=models.CASCADE)
 

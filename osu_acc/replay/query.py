@@ -8,7 +8,7 @@ from requests import get
 from osu_acc.replay import util
 from osu_acc.replay import classes
 from osu_acc.replay.models import Replay, ReplayData
-from osu_acc.beatmap.models import Beatmap, TimingPoint, HitObject
+from osu_acc.beatmap.models import Beatmap, BreakPeriod, TimingPoint, HitObject
 
 
 # =============================================================================
@@ -37,8 +37,8 @@ def create_replay_data_entry(replay_id, replay_events):
         replay_data_fields['y_coords'].append(replay_event.y)
         replay_data_fields['hit_object_times'].append(replay_event.time)
 
-    replay_data_model = ReplayData(**replay_data_fields)
-    replay_data_model.save()
+    replay_data_entry = ReplayData(**replay_data_fields)
+    replay_data_entry.save()
 
 
 def select_replay_data_field(replay_id, field):
@@ -51,7 +51,7 @@ def select_replay_data_field(replay_id, field):
         replay_id (str): The hash of the replay, given by osrparse.
 
     Returns:
-        query_set[field]: The field requested.
+        field: The field requested.
         Is of type: str, List(Decimal).
     """
 
@@ -83,12 +83,14 @@ def create_replay_entry(json_resp, parsed_replay):
 
     replay_fields = {}
 
-    # CONVERTING TYPES
+    # GETTING ARGUMENTS AND CONVERTING TYPES
     circle_size = Decimal(json_resp['diff_size'])
     overall_diff = Decimal(json_resp['diff_overall'])
-    hit_objects_models = select_beatmap_field(json_resp['beatmap_id'], 'hit_object')
-    hit_objects = util.convert_hit_object_model_to_class(hit_objects_models)
+    break_periods_model = select_beatmap_field(json_resp['beatmap_id'], 'break_period')
+    break_periods = util.convert_beatmap_break_periods_to_class(break_periods_model)
     replay_events = util.convert_osrp_play_data_to_class(parsed_replay.play_data)
+    hit_objects_model = select_beatmap_field(json_resp['beatmap_id'], 'hit_object')
+    hit_objects = util.convert_hit_object_model_to_class(hit_objects_model)
 
     # POPULATING FIELD DICTIONARY
     replay_fields['replay_id'] = parsed_replay.replay_hash
@@ -107,9 +109,10 @@ def create_replay_entry(json_resp, parsed_replay):
                                                       replay_fields['num_raw_50'],
                                                       replay_fields['num_raw_miss'])
 
-    
+
     true_acc_fields = util.get_true_accuracy_fields(circle_size,
                                                     overall_diff,
+                                                    break_periods,
                                                     replay_events,
                                                     hit_objects)
     replay_fields = {**replay_fields, **true_acc_fields}
@@ -123,6 +126,7 @@ def create_replay_entry(json_resp, parsed_replay):
 
     replay_fields['hit_errors'] = util.get_hit_errors(circle_size,
                                                       overall_diff,
+                                                      break_periods,
                                                       replay_events,
                                                       hit_objects)
 
@@ -130,8 +134,8 @@ def create_replay_entry(json_resp, parsed_replay):
     replay_fields = {**replay_fields, **hit_error_data}
 
     # Create an instance of a Replay model
-    replay_model = Replay(**replay_fields)
-    replay_model.save()
+    replay_entry = Replay(**replay_fields)
+    replay_entry.save()
 
 
 def select_replay_field(replay_id, field):
@@ -189,6 +193,79 @@ def select_replay_field(replay_id, field):
 # =============================================================================
 
 
+def create_break_period_entry(bm_id, data):
+    """
+    Create and save a BreakPeriod entry.
+
+    Equivalent to: INSERT INTO beatmap_breakperiod (fields) VALUES (values);
+
+    Args:
+        bm_id (str): The id of the beatmap associated.
+        data (List(str)): The beatmap data as a list of strings.
+
+    Returns:
+        break_period_entry(BreakPeriod): The created BreakPeriod instance.
+    """
+
+    if BreakPeriod.objects.filter(beatmap_id=bm_id).exists():
+        return
+
+    # Syntax: 2,start,end
+    # The start and end fields are both an integral number of milliseconds,
+    # from the beginning of the song,
+    # defining the start and end point of the break period, respectively.
+
+    break_fields = {}
+    break_fields['beatmap_id'] = bm_id
+    break_fields['starts'] = []
+    break_fields['ends'] = []
+
+    is_break = False
+
+    for line in data:
+        if 'Break Periods' in line.strip():
+            is_break = True
+            continue
+
+        if is_break:
+            # Next subsection, storyboarding, begins with the line
+            # '//Storyboard Layer 0 (Background)\n'
+            if 'Storyboard' in line.strip():
+                is_break = False
+            else:
+                start = int(line.split(',')[1])
+                break_fields['starts'].append(start)
+                end = int(line.split(',')[2])
+                break_fields['ends'].append(end)
+
+    break_entry = BreakPeriod(**break_fields)
+    break_entry.save()
+
+
+def select_break_period_field(beatmap_id, field):
+    """
+    Returns the value of the field of a specific Break entry.
+
+    Equivalent to: SELECT field FROM beatmap_break WHERE beatmap_id = beatmap_id;
+
+    Args:
+        beatmap_id (str): The id of the beatmap, given by osu!api.
+
+    Returns:
+        field: The field requested.
+        Is of type: List(int), List(Decimal).
+    """
+
+    valid_keys = set(['starts', 'ends'])
+
+    if field not in valid_keys:
+        # TODO: Raise a proper exception.
+        return None
+
+    break_period = BreakPeriod.objects.get(beatmap_id=beatmap_id)
+    return getattr(break_period, field)
+
+
 def create_timing_point_entry(bm_id, data):
     """
     Create and save a TimingPoint entry.
@@ -220,7 +297,7 @@ def create_timing_point_entry(bm_id, data):
         if line.strip() == '[TimingPoints]':
             is_timing_point = True
             continue
-        
+
         if is_timing_point:
             # There is always an empty line before the start of the next section
             # Use it to identify when the current section ends
@@ -232,8 +309,8 @@ def create_timing_point_entry(bm_id, data):
                 ms_per_beat = Decimal(line.split(',')[1])
                 timing_point_fields['ms_per_beats'].append(round(ms_per_beat, 2))
 
-    timing_point_model = TimingPoint(**timing_point_fields)
-    timing_point_model.save()
+    timing_point_entry = TimingPoint(**timing_point_fields)
+    timing_point_entry.save()
 
 
 def select_timing_point_field(beatmap_id, field):
@@ -246,7 +323,7 @@ def select_timing_point_field(beatmap_id, field):
         beatmap_id (str): The id of the beatmap, given by osu!api.
 
     Returns:
-        query_set[field]: The field requested.
+        field: The field requested.
         Is of type: List(int), List(Decimal).
     """
 
@@ -308,8 +385,8 @@ def create_hit_object_entry(bm_id, data):
                 obj_type = line.split(',')[3]
                 hit_object_fields['hit_object_types'].append(obj_type)
 
-    hit_object_model = HitObject(**hit_object_fields)
-    hit_object_model.save()
+    hit_object_entry = HitObject(**hit_object_fields)
+    hit_object_entry.save()
 
 
 def select_hit_object_field(beatmap_id, field):
@@ -322,7 +399,7 @@ def select_hit_object_field(beatmap_id, field):
         beatmap_id (str): The id of the beatmap, given by osu!api.
 
     Returns:
-        query_set[field]: The field requested.
+        field: The field requested.
         Is of type: List(Decimal).
     """
 
@@ -375,15 +452,17 @@ def create_beatmap_entry(json_resp):
     beatmap_fields['beatmap_cs'] = Decimal(json_resp['diff_size'])
     beatmap_fields['beatmap_od'] = Decimal(json_resp['diff_overall'])
 
-    # Create and use TimingPoint and HitObject fields
+    # Create and get model fields
+    create_break_period_entry(bm_id, data)
+    beatmap_fields['break_period'] = BreakPeriod.objects.get(beatmap_id=bm_id)
     create_timing_point_entry(bm_id, data)
     beatmap_fields['timing_point'] = TimingPoint.objects.get(beatmap_id=bm_id)
     create_hit_object_entry(bm_id, data)
     beatmap_fields['hit_object'] = HitObject.objects.get(beatmap_id=bm_id)
 
     # Create Beatmap model instance and save to DB
-    beatmap_model = Beatmap(**beatmap_fields)
-    beatmap_model.save()
+    beatmap_entry = Beatmap(**beatmap_fields)
+    beatmap_entry.save()
 
 
 def select_beatmap_field(beatmap_id, field):
@@ -396,11 +475,12 @@ def select_beatmap_field(beatmap_id, field):
         beatmap_id (str): The id of the beatmap, given by osu!api.
 
     Returns:
-        query_set[field]: The field requested.
+        field: The field requested.
         Is of type: TimingPoint, HitObject, str, Decimal.
     """
 
     valid_keys = set([
+        'break_period',
         'timing_point',
         'hit_object',
         'beatmap_creator',
